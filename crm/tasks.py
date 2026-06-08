@@ -1,12 +1,13 @@
 """
-Celery tasks for long-running background operations.
+Background tasks for long-running operations.
 
 Tasks:
-  run_apify_import(run_pk, job_pk)          — Phase 1: import leads from Apify dataset
-                                              Phase 2: send outreach emails
-  run_backup_outreach_task(workspace_pk, user_pk, job_pk) — Re-send to missed contacts
+  run_apify_import(run_pk, job_pk)  — Phase 1: import leads from Apify + ZeroBounce clean
+                                       Phase 2: send outreach emails
+  run_backup_outreach_task(...)      — Re-send to missed contacts
 """
 import logging
+import re
 
 import requests
 from celery import shared_task
@@ -15,19 +16,17 @@ from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
-_PROGRESS_INTERVAL = 50  # write progress to DB every N records
+_PROGRESS_INTERVAL = 50
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _parse_item_to_contact_kwargs(item, workspace):
+def _parse_item_to_contact_kwargs(item, workspace, email_override=None, email_status_override=None):
     """Convert a raw Apify dataset item dict to Contact.objects.create kwargs."""
     first   = (item.get('firstName') or '').strip()
     last    = (item.get('lastName')  or '').strip()
     name    = (f"{first} {last}".strip()
                or (item.get('fullName') or '').strip()
                or (item.get('name')     or '').strip())
-    email   = (item.get('email') or '').strip().lower()
+    email   = email_override if email_override is not None else (item.get('email') or '').strip().lower()
     company = (item.get('organizationName') or item.get('companyName') or '').strip()
 
     location = ', '.join(filter(None, [
@@ -46,18 +45,14 @@ def _parse_item_to_contact_kwargs(item, workspace):
     if not isinstance(_phone, str):
         _phone = ''
 
-    # Company domain — strip protocol/path to get bare domain
     _website = (item.get('organizationWebsite') or item.get('companyWebsite') or '').strip()
     if _website:
-        import re as _re
-        _website = _re.sub(r'^https?://', '', _website).rstrip('/').split('/')[0]
+        _website = re.sub(r'^https?://', '', _website).rstrip('/').split('/')[0]
 
-    # Connection count may be a number or formatted string like "500+"
     _connections = item.get('connections') or item.get('connectionCount') or ''
     if isinstance(_connections, int):
         _connections = str(_connections)
 
-    # Pre-populate notes with LinkedIn bio + company description
     _notes_parts = []
     _summary = (item.get('summary') or item.get('headline') or item.get('about') or '').strip()
     _org_desc = (item.get('organizationDescription') or item.get('companyDescription') or '').strip()
@@ -66,6 +61,8 @@ def _parse_item_to_contact_kwargs(item, workspace):
     if _org_desc:
         _org_name = company or 'the company'
         _notes_parts.append(f'**About {_org_name}:** {_org_desc}')
+
+    email_status = email_status_override or ''
 
     return dict(
         workspace        = workspace,
@@ -83,6 +80,7 @@ def _parse_item_to_contact_kwargs(item, workspace):
         org_founded_year = str(item.get('organizationFoundedYear') or item.get('organizationFounded') or '').strip()[:20],
         org_revenue      = (item.get('organizationRevenue') or item.get('companyRevenue') or '').strip()[:200],
         connections      = _connections[:50],
+        email_status     = email_status[:100],
         notes            = '\n\n'.join(_notes_parts),
         source           = 'apify_advanced_search',
         stage            = 'cold_lead',
@@ -119,16 +117,42 @@ def _fetch_dataset_pages(dataset_id, token):
         offset += limit
 
 
-# ── Tasks ─────────────────────────────────────────────────────────────────────
+def _validate_page_emails(items):
+    """Batch-validate all emails in a dataset page. Returns {email: zb_result}."""
+    from crm.services.zerobounce import is_configured, validate_batch, validate_email
+
+    if not is_configured():
+        return {}
+
+    emails = [
+        (item.get('email') or '').strip().lower()
+        for item in items
+        if (item.get('email') or '').strip()
+    ]
+    if not emails:
+        return {}
+
+    results = validate_batch(emails)
+    if results:
+        return results
+
+    # Batch failed — fall back to single validation
+    out = {}
+    for addr in dict.fromkeys(emails):
+        row = validate_email(addr)
+        if row:
+            out[addr] = row
+    return out
+
 
 @shared_task(bind=True, max_retries=0, ignore_result=True)
 def run_apify_import(self, run_pk, job_pk):
     """
-    Phase 1 — Fetch Apify dataset items and create Contact records.
-    Phase 2 — Send outreach emails to newly imported contacts.
-    Progress is written to TaskJob every _PROGRESS_INTERVAL records.
+    Phase 1 — Fetch Apify dataset items, validate emails via ZeroBounce, create Contacts.
+    Phase 2 — Send outreach emails to newly imported contacts with valid emails.
     """
     from crm.models import ApifyRun, Contact, TaskJob, HeatSettings
+    from crm.services.zerobounce import apply_validation, is_configured
 
     job = TaskJob.objects.get(pk=job_pk)
     run = ApifyRun.objects.get(pk=run_pk)
@@ -147,17 +171,30 @@ def run_apify_import(self, run_pk, job_pk):
             .values_list('email', flat=True)
         )
 
-        # ── Phase 1: import ──────────────────────────────────────────────────
-        new_contacts = []  # contacts with email that need outreach
-        imported = 0
+        new_contacts = []
+        imported     = 0
 
         for page in _fetch_dataset_pages(dataset_id, token):
+            zb_by_email = _validate_page_emails(page) if is_configured() else {}
+
             for item in page:
+                raw_email = (item.get('email') or '').strip().lower()
                 kwargs, name, email, company = _parse_item_to_contact_kwargs(item, workspace)
+
                 if not name:
                     continue
                 if not kwargs.get('phone'):
                     continue
+
+                send_outreach = False
+                if raw_email:
+                    stored_email, email_status, send_outreach = apply_validation(
+                        raw_email, zb_by_email.get(raw_email),
+                    )
+                    kwargs['email']        = stored_email
+                    kwargs['email_status'] = email_status
+                    email = stored_email
+
                 if email and email in existing_emails:
                     continue
                 if not email and Contact.objects.filter(
@@ -168,13 +205,13 @@ def run_apify_import(self, run_pk, job_pk):
                 contact = Contact.objects.create(**kwargs)
                 if email:
                     existing_emails.add(email)
+                if send_outreach and email:
                     new_contacts.append(contact)
                 imported += 1
 
                 if imported % _PROGRESS_INTERVAL == 0:
                     TaskJob.objects.filter(pk=job_pk).update(leads_imported=imported)
 
-        # Commit final import count and transition to phase 2
         TaskJob.objects.filter(pk=job_pk).update(
             leads_imported=imported,
             leads_total=imported,
@@ -184,8 +221,7 @@ def run_apify_import(self, run_pk, job_pk):
         run.leads_imported = imported
         run.save(update_fields=['leads_imported'])
 
-        # ── Phase 2: send outreach ───────────────────────────────────────────
-        from crm.views import _maybe_send_outreach  # lazy to avoid circular import
+        from crm.views import _maybe_send_outreach
 
         cfg  = HeatSettings.get_for_workspace(workspace)
         sent = skipped = 0
@@ -206,7 +242,6 @@ def run_apify_import(self, run_pk, job_pk):
                     emails_sent=sent, emails_skipped=skipped,
                 )
 
-        # Mark complete
         now = timezone.now()
         TaskJob.objects.filter(pk=job_pk).update(
             emails_sent=sent,
@@ -236,12 +271,9 @@ def run_apify_import(self, run_pk, job_pk):
 
 @shared_task(bind=True, max_retries=0, ignore_result=True)
 def run_backup_outreach_task(self, workspace_pk, user_pk, job_pk):
-    """
-    Send outreach to contacts from the last Apify import that were missed
-    (imported but never received an outbound email).
-    """
+    """Send outreach to contacts from the last Apify import that were missed."""
     from crm.models import TaskJob, Contact, EmailThread, HeatSettings, ApifyRun
-    from crm.views import _maybe_send_outreach  # lazy to avoid circular import
+    from crm.views import _maybe_send_outreach
     from django.contrib.auth import get_user_model
 
     User      = get_user_model()

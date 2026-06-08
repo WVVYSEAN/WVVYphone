@@ -452,14 +452,14 @@ def workspace_invite(request, workspace, membership):
             if cfg.resend_api_key:
                 _resend.api_key = cfg.resend_api_key
                 login_url = django_settings.SITE_URL.rstrip('/') + '/auth/google/'
-                from_addr = cfg.resend_from_email or 'WVVYReach <noreply@wvvy.pro>'
+                from_addr = cfg.resend_from_email or 'WVVYphone <noreply@wvvy.pro>'
                 _resend.Emails.send({
                     'from':    from_addr,
                     'to':      [email],
-                    'subject': f"You've been invited to {workspace.name} on WVVYReach",
+                    'subject': f"You've been invited to {workspace.name} on WVVYphone",
                     'html': f"""
 <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;background:#0f1117;color:#eeeef5;border-radius:12px;">
-  <h2 style="margin:0 0 8px;font-size:1.25rem;color:#00e8c8;">You're invited to WVVYReach</h2>
+  <h2 style="margin:0 0 8px;font-size:1.25rem;color:#00e8c8;">You're invited to WVVYphone</h2>
   <p style="margin:0 0 24px;color:#9899b0;font-size:0.9375rem;">
     You've been added to <strong style="color:#eeeef5;">{workspace.name}</strong> as a {role}.
     Click the button below to sign in with your Google account.
@@ -468,7 +468,7 @@ def workspace_invite(request, workspace, membership):
     Sign in with Google
   </a>
   <p style="margin:24px 0 0;color:#5a5b72;font-size:0.75rem;">
-    You're receiving this because {request.user.email} added you to WVVYReach.
+    You're receiving this because {request.user.email} added you to WVVYphone.
   </p>
 </div>""",
                 })
@@ -1004,7 +1004,7 @@ def _maybe_send_outreach(contact, workspace, user, cfg=None, template_id=None):
             content_type=ct, object_id=contact.pk,
             touchpoint_type='email', date=date.today(),
             summary=f'Auto outreach: {subject}',
-            notes=body[:500], logged_by='MegaReach (Auto)',
+            notes=body[:500], logged_by='WVVYphone (Auto)',
         )
         contact.heat = auto_heat(contact, cfg)
         contact.save(update_fields=['heat'])
@@ -1500,7 +1500,7 @@ def send_email(request, model_type, pk, workspace, membership):
     import resend
     resend.api_key = cfg.resend_api_key
     profile   = UserProfile.get_for_user(request.user)
-    from_addr = profile.from_email or cfg.resend_from_email or 'MegaReach <noreply@megareach.app>'
+    from_addr = profile.from_email or cfg.resend_from_email or 'WVVYphone <noreply@wvvy.pro>'
 
     import uuid as _uuid
     from .models import EmailThread
@@ -1541,7 +1541,7 @@ def send_email(request, model_type, pk, workspace, membership):
         date            = date.today(),
         summary         = f'Email sent: {subject}',
         notes           = body[:500],
-        logged_by       = 'MegaReach (Resend)',
+        logged_by       = 'WVVYphone (Resend)',
     )
     if not obj.heat_override:
         obj.heat = auto_heat(obj, cfg)
@@ -2525,19 +2525,17 @@ def apify_webhook(request):
     try:
         run = ApifyRun.objects.get(apify_run_id=run_id)
     except ApifyRun.DoesNotExist:
-        return JsonResponse({'ok': True})  # unknown run — ignore
+        return JsonResponse({'ok': True})
 
     if event_type == 'ACTOR.RUN.SUCCEEDED':
         run.apify_dataset_id = dataset_id
         run.status = 'RUNNING'
         run.save(update_fields=['apify_dataset_id', 'status'])
-        # get_or_create prevents a duplicate TaskJob if Apify retries the webhook
         job, created = TaskJob.objects.get_or_create(
             apify_run=run,
             defaults={'workspace': run.workspace, 'task_type': 'apify_import'},
         )
         if not created:
-            # Already queued by a previous delivery — ignore the retry
             return JsonResponse({'ok': True})
         import threading
         from crm.tasks import run_apify_import
@@ -2786,8 +2784,8 @@ def _serialize_drip(drip):
 @require_POST
 def backup_outreach(request, workspace, membership):
     """
-    Kick off a background Celery task to send outreach to any contacts from the
-    last Apify import that were missed (imported but never emailed).
+    Kick off a background task to send outreach to any contacts from the
+    last Advanced Search import that were missed (imported but never emailed).
     Only one active backup-outreach job is allowed per workspace at a time.
     """
     from .models import TaskJob

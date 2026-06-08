@@ -139,7 +139,7 @@ class HeatSettings(models.Model):
     # Resend email integration
     resend_api_key        = models.CharField(max_length=500, blank=True)
     resend_from_email     = models.CharField(max_length=200, blank=True,
-                               help_text='e.g. "MegaReach <you@yourdomain.com>"')
+                               help_text='e.g. "WVVYphone <you@yourdomain.com>"')
     resend_webhook_secret = models.CharField(max_length=500, blank=True)
 
     # Reply tracking
@@ -274,7 +274,7 @@ class Contact(models.Model):
     location           = models.CharField(max_length=200, blank=True)
     industry           = models.CharField(max_length=200, blank=True)
     source             = models.CharField(max_length=25, choices=SOURCE_CHOICES, blank=True)
-    email_status       = models.CharField(max_length=100, blank=True, default='', help_text='Apollo email verification status')
+    email_status       = models.CharField(max_length=100, blank=True, default='', help_text='ZeroBounce email verification status')
     relationship_owner = models.CharField(max_length=200, blank=True)
     notes              = models.TextField(blank=True)
     heat               = models.CharField(max_length=20, choices=HEAT_CHOICES, default='cold')
@@ -295,7 +295,7 @@ class Contact(models.Model):
     called               = models.BooleanField(default=False)
     call_outcome         = models.CharField(max_length=20, blank=True, default='', choices=CALL_OUTCOME_CHOICES)
     email_outreach_enabled = models.BooleanField(default=False)
-    # Company profile fields (populated from Apify import)
+    # Company profile fields (populated from Advanced Search import)
     org_type             = models.CharField(max_length=200, blank=True, default='')
     org_founded_year     = models.CharField(max_length=20,  blank=True, default='')
     org_revenue          = models.CharField(max_length=200, blank=True, default='')
@@ -682,7 +682,7 @@ class TaskJob(models.Model):
                          default='pending')
     phase          = models.CharField(max_length=20, blank=True)  # 'importing' | 'emailing'
 
-    # Phase 1 — importing leads from Apify dataset
+    # Phase 1 — importing leads from Apify dataset (+ ZeroBounce email clean)
     leads_total    = models.IntegerField(default=0)
     leads_imported = models.IntegerField(default=0)
 

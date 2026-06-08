@@ -145,5 +145,6 @@ MASTER_EMAIL = os.environ.get('MASTER_EMAIL', '')
 GOOGLE_LOGIN_CLIENT_ID     = os.environ.get('GOOGLE_LOGIN_CLIENT_ID', '')
 GOOGLE_LOGIN_CLIENT_SECRET = os.environ.get('GOOGLE_LOGIN_CLIENT_SECRET', '')
 
-APIFY_API_TOKEN      = os.environ.get('APIFY_API_TOKEN', '')
-APIFY_WEBHOOK_SECRET = os.environ.get('APIFY_WEBHOOK_SECRET', '')
+APIFY_API_TOKEN       = os.environ.get('APIFY_API_TOKEN', '')
+APIFY_WEBHOOK_SECRET  = os.environ.get('APIFY_WEBHOOK_SECRET', '')
+ZEROBOUNCE_API_KEY    = os.environ.get('ZEROBOUNCE_API_KEY', '')

@@ -67,11 +67,11 @@ Note: setting `resend.api_key` is a module-level mutation. This is safe with gun
 
 ### Background Tasks
 
-Long-running operations (Apify lead import + outreach emails) run as **background threads** within the gunicorn process — not Celery. Task functions live in `crm/tasks.py` and are called directly via `threading.Thread(target=fn, args=(...), daemon=True).start()` from `apify_webhook` and `backup_outreach` in `views.py`.
+Long-running operations (Apify lead import + ZeroBounce email clean + outreach emails) run as **background threads** within the gunicorn process — not Celery. Task functions live in `crm/tasks.py` and are called directly via `threading.Thread(target=fn, args=(...), daemon=True).start()` from `apify_webhook` and `backup_outreach` in `views.py`.
 
 **`TaskJob` model** tracks progress with two phases:
-- `phase='importing'` — fetching leads from Apify dataset, writing Contact records
-- `phase='emailing'` — sending outreach emails to imported contacts
+- `phase='importing'` — fetching leads from Apify dataset, validating emails via ZeroBounce, writing Contact records
+- `phase='emailing'` — sending outreach emails to imported contacts with valid emails
 
 Progress is written to the DB every 50 records (`_PROGRESS_INTERVAL`). The frontend polls `/api/tasks/<job_pk>/status/` every 2s.
 
@@ -92,6 +92,15 @@ Contact matching in `_handle_inbound`: prefer `reply+{pk}@` address tag (unambig
 The actor ID is `T1XDXWc1L92AfIJtd`. Strict enum fields: `seniority`, `functional` — use exact values from `_SENIORITY_OPTIONS` / `_FUNCTIONAL_OPTIONS` in `views.py`. Industry is free-text via `industryKeywords`. Do not add `personState` or `companyState` filters — Apify's enum values for these are unusable LinkedIn-internal region strings.
 
 Webhook flow: Apify fires `ACTOR.RUN.SUCCEEDED` → `apify_webhook` sets dataset ID and spawns a background thread running `run_apify_import` → task imports contacts and sends outreach → `TaskJob` tracks progress.
+
+### ZeroBounce Integration
+
+During `run_apify_import`, emails from each Apify dataset page are batch-validated via ZeroBounce (`crm/services/zerobounce.py`). Service layer rules:
+- **Keep email on contact** if status is `valid` or `catch-all`
+- **Strip email** (but still import contact if phone present) for `invalid`, `spamtrap`, `abuse`, `do_not_mail`, etc.
+- **Automated outreach** only for `valid` emails
+- Result stored in `Contact.email_status` as `status` or `status:sub_status`
+- Requires `ZEROBOUNCE_API_KEY`; if unset, emails are kept with status `unverified` and outreach is skipped
 
 ### Phone-First Workflow
 

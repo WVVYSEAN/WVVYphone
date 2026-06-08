@@ -49,7 +49,7 @@ def _log_activity(contact, summary, notes=''):
         date=date.today(),
         summary=summary,
         notes=notes,
-        logged_by='MegaReach (Drip)',
+        logged_by='WVVYphone (Drip)',
     )
 
 

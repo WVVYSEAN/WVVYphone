@@ -1,10 +1,10 @@
-# WVVYReach
+# WVVYphone
 
 AI-powered outbound CRM for phone-first lead outreach and personalised cold email campaigns. Built on Django, deployed on Railway at [wvvy.pro](https://wvvy.pro).
 
 ## What it does
 
-- **Lead generation** — search LinkedIn via Apify and import contacts directly into the CRM (phone number required at import)
+- **Lead generation** — search LinkedIn via Apify and import contacts directly into the CRM (phone number required at import; emails validated via ZeroBounce)
 - **Phone-first workflow** — each lead has a dedicated detail page with a one-tap `tel:` call link, called/outcome tracking, and a contact log
 - **Cold lead list** — server-side search, multi-field filter builder, quick-filter chips, multi-level sort panel, saved filter pills with emoji, relative time display, and **AI-powered natural language search** (Claude Haiku ranks leads by relevance with on-page score badges)
 - **Automated outreach** — send personalised email sequences to imported leads via Resend
@@ -20,6 +20,7 @@ AI-powered outbound CRM for phone-first lead outreach and personalised cold emai
 | Database | PostgreSQL (Railway) / SQLite (local) |
 | Email | Resend API |
 | Lead import | Apify (LinkedIn scraper, actor `T1XDXWc1L92AfIJtd`) |
+| Email validation | ZeroBounce (batch API during import) |
 | Background tasks | Python threads (within gunicorn) |
 | Static files | WhiteNoise |
 | Deployment | Railway |
@@ -56,6 +57,7 @@ python manage.py runserver
 | `DATABASE_URL` | Yes (prod) | PostgreSQL connection URL — injected automatically when a Railway Postgres service is linked |
 | `APIFY_API_TOKEN` | Yes | Apify API token for LinkedIn scraping |
 | `APIFY_WEBHOOK_SECRET` | Yes | Secret for validating Apify webhook payloads |
+| `ZEROBOUNCE_API_KEY` | Yes | ZeroBounce API key for email validation during import |
 | `ANTHROPIC_API_KEY` | No | Anthropic API key — required for AI-powered natural language search on the cold lead list |
 | `REDIS_URL` | No | Redis connection URL (only needed if Celery worker is running) |
 
@@ -75,7 +77,7 @@ web: python manage.py migrate --noinput && python manage.py collectstatic --noin
 
 **Workspaces** — all CRM data is scoped to a workspace. Users belong to workspaces with roles (`owner`, `admin`, `member`). The active workspace is tracked in the session.
 
-**Lead import flow** — user fills in the Advanced Search form → Apify runs the LinkedIn scrape → webhook fires on completion → contacts are imported (phone number required) and outreach emails sent, all tracked by a `TaskJob` record with a live progress bar in the UI.
+**Lead import flow** — user fills in the Advanced Search form → Apify runs the LinkedIn scrape → webhook fires on completion → contacts are imported (phone required), emails are validated through ZeroBounce (invalid emails are stripped; only `valid` emails get outreach), all tracked by a `TaskJob` record with a live progress bar in the UI.
 
 **Phone-first lead list** — `/contacts/cold_lead/` is a dedicated list page with:
 - Global search across name, email, and company

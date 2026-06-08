@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>{% block title %}WVVYReach{% endblock %}</title>
+  <title>{% block title %}WVVYphone{% endblock %}</title>
 
   <!-- Favicons & PWA -->
   <link rel="icon" type="image/x-icon"       href="{% static 'crm/favicon.ico' %}">
@@ -17,7 +17,7 @@
 
   <!-- Open Graph / social sharing -->
   <meta property="og:type"        content="website">
-  <meta property="og:title"       content="{% block og_title %}WVVYReach{% endblock %}">
+  <meta property="og:title"       content="{% block og_title %}WVVYphone{% endblock %}">
   <meta property="og:description" content="{% block og_description %}AI-powered outbound CRM{% endblock %}">
   <meta property="og:image"       content="{% block og_image %}{% static 'crm/og-image.png' %}{% endblock %}">
   <meta name="twitter:card"       content="summary_large_image">
@@ -37,7 +37,7 @@
       {% if active_workspace and active_workspace.logo %}
       <img src="{{ active_workspace.logo }}" alt="{{ active_workspace.name }}" class="h-7 w-auto object-contain rounded">
       {% else %}
-      <span class="text-xl font-bold tracking-tight"><span class="wvvy-logo-wvvy">WVVY</span><span class="wvvy-logo-reach">Reach</span></span>
+      <span class="text-xl font-bold tracking-tight"><span class="wvvy-logo-wvvy">WVVY</span><span class="wvvy-logo-phone">phone</span></span>
       {% endif %}
       <span style="color:var(--border-default)">|</span>
       <span style="color:var(--text-tertiary);font-size:0.8125rem;font-weight:500;">CRM Dashboard</span>

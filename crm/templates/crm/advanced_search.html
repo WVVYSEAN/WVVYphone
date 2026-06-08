@@ -1,6 +1,6 @@
 {% extends 'crm/base.html' %}
 
-{% block title %}Advanced Search — WVVYReach{% endblock %}
+{% block title %}Advanced Search — WVVYphone{% endblock %}
 
 {% block content %}
 <main class="max-w-7xl mx-auto px-6 py-8 space-y-6">
@@ -420,7 +420,6 @@
       });
       const data = await resp.json();
       if (data.ok && data.run_id) {
-        // Poll the run until Apify finishes → webhook fires → TaskJob created → switch to task polling
         startRunPolling(searchId, data.run_id);
       } else {
         statusCell.innerHTML = `<span class="text-xs text-red-400">${data.error || 'Failed'}</span>`;
@@ -462,9 +461,8 @@
   const TASK_JOBS = {{ task_jobs_json|safe }};
 
   const _taskPollers = {};  // searchId → intervalId
-  const _runPollers  = {};  // searchId → intervalId (legacy: waiting for Apify to finish)
+  const _runPollers  = {};  // searchId → intervalId (waiting for Apify to finish)
 
-  // ── Legacy run polling (while Apify is processing — before webhook fires) ──
   function startRunPolling(searchId, runId) {
     if (_runPollers[searchId]) clearInterval(_runPollers[searchId]);
     _runPollers[searchId] = setInterval(() => pollRunStatus(searchId, runId), 5000);
@@ -475,20 +473,18 @@
       const resp = await fetch(`/apify/run-status/${runId}/`);
       const data = await resp.json();
       if (data.task_job_id) {
-        // Webhook has fired — switch to task polling
         clearInterval(_runPollers[searchId]);
         delete _runPollers[searchId];
         startTaskPolling(searchId, data.task_job_id);
       } else if (['SUCCEEDED', 'FAILED', 'ABORTED'].includes(data.status)) {
         clearInterval(_runPollers[searchId]);
         delete _runPollers[searchId];
-        _renderApifyStatus(searchId, data);
+        _renderRunStatus(searchId, data);
       }
-      // RUNNING (Apify still processing) — keep polling, show spinner
     } catch (e) {}
   }
 
-  function _renderApifyStatus(searchId, data) {
+  function _renderRunStatus(searchId, data) {
     const STATUS_STYLE = {
       SUCCEEDED: 'bg-emerald-900/50 text-emerald-400',
       FAILED:    'bg-red-900/50 text-red-400',
@@ -593,7 +589,7 @@
       _renderTaskProgress(searchId, job);
     }
   });
-  // Legacy: start run polling for any RUNNING Apify rows that don't yet have a TaskJob
+  // Start run polling for RUNNING Apify rows that don't yet have a TaskJob
   document.querySelectorAll('[data-run-id][data-status="RUNNING"]').forEach(el => {
     const row = el.closest('tr');
     if (!row) return;
